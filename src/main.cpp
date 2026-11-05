@@ -1,8 +1,18 @@
+#define SDL_MAIN_USE_CALLBACKS 1
+#include <GLES3/gl3.h>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
-#include <GLES3/gl3.h>
 
-const char* vertexShaderSource = 
+struct AppState
+{
+    SDL_Window *window = nullptr;
+    SDL_GLContext glContext = nullptr;
+    GLuint shaderProgram = 0;
+    GLuint VAO = 0;
+    GLuint VBO = 0;
+};
+
+const char *vertexShaderSource =
     "#version 300 es\n"
     "layout (location = 0) in vec2 aPos;\n"
     "layout (location = 1) in vec3 aColor;\n"
@@ -12,7 +22,7 @@ const char* vertexShaderSource =
     "    vColor = aColor;\n"
     "}\0";
 
-const char* fragmentShaderSource = 
+const char *fragmentShaderSource =
     "#version 300 es\n"
     "precision mediump float;\n"
     "in vec3 vColor;\n"
@@ -21,14 +31,16 @@ const char* fragmentShaderSource =
     "    FragColor = vec4(vColor, 1.0);\n"
     "}\0";
 
-GLuint compileShader(GLenum type, const char* source) {
+static GLuint compileShader(GLenum type, const char *source)
+{
     GLuint shader = glCreateShader(type);
     glShaderSource(shader, 1, &source, nullptr);
     glCompileShader(shader);
 
     GLint success;
     glGetShaderiv(shader, GL_COMPILE_STATUS, &success);
-    if (!success) {
+    if (!success)
+    {
         char infoLog[512];
         glGetShaderInfoLog(shader, 512, nullptr, infoLog);
         SDL_Log("Shader compilation error: %s", infoLog);
@@ -36,14 +48,20 @@ GLuint compileShader(GLenum type, const char* source) {
     return shader;
 }
 
-int main(int argc, char* argv[]) {
+/* Called once at application launch */
+SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
+{
     (void)argc;
     (void)argv;
 
-    if (!SDL_Init(SDL_INIT_VIDEO)) {
+    if (!SDL_Init(SDL_INIT_VIDEO))
+    {
         SDL_Log("Unable to initialize SDL: %s", SDL_GetError());
-        return 1;
+        return SDL_APP_FAILURE;
     }
+
+    auto *state = new AppState();
+    *appstate = state;
 
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
@@ -51,24 +69,22 @@ int main(int argc, char* argv[]) {
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
 
-    SDL_Window* window = SDL_CreateWindow(
-        "SDL3 OpenGL ES 3.0",
+    state->window = SDL_CreateWindow(
+        "SDL3 OpenGL ES 3.0 Callbacks",
         800, 600,
-        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE
-    );
+        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
 
-    if (!window) {
+    if (!state->window)
+    {
         SDL_Log("Failed to create window: %s", SDL_GetError());
-        SDL_Quit();
-        return 1;
+        return SDL_APP_FAILURE;
     }
 
-    SDL_GLContext glContext = SDL_GL_CreateContext(window);
-    if (!glContext) {
+    state->glContext = SDL_GL_CreateContext(state->window);
+    if (!state->glContext)
+    {
         SDL_Log("Failed to create OpenGL context: %s", SDL_GetError());
-        SDL_DestroyWindow(window);
-        SDL_Quit();
-        return 1;
+        return SDL_APP_FAILURE;
     }
 
     SDL_GL_SetSwapInterval(1);
@@ -76,71 +92,94 @@ int main(int argc, char* argv[]) {
     GLuint vertexShader = compileShader(GL_VERTEX_SHADER, vertexShaderSource);
     GLuint fragmentShader = compileShader(GL_FRAGMENT_SHADER, fragmentShaderSource);
 
-    GLuint shaderProgram = glCreateProgram();
-    glAttachShader(shaderProgram, vertexShader);
-    glAttachShader(shaderProgram, fragmentShader);
-    glLinkProgram(shaderProgram);
+    state->shaderProgram = glCreateProgram();
+    glAttachShader(state->shaderProgram, vertexShader);
+    glAttachShader(state->shaderProgram, fragmentShader);
+    glLinkProgram(state->shaderProgram);
 
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
 
     float vertices[] = {
         // positions    // colors
-         0.0f,  0.5f,   1.0f, 0.0f, 0.0f, // top (red)
-        -0.5f, -0.5f,   0.0f, 1.0f, 0.0f, // bottom left (green)
-         0.5f, -0.5f,   0.0f, 0.0f, 1.0f  // bottom right (blue)
+        0.0f, 0.5f, 1.0f, 0.0f, 0.0f,   // top (red)
+        -0.5f, -0.5f, 0.0f, 1.0f, 0.0f, // bottom left (green)
+        0.5f, -0.5f, 0.0f, 0.0f, 1.0f   // bottom right (blue)
     };
 
-    GLuint VAO, VBO;
-    glGenVertexArrays(1, &VAO);
-    glGenBuffers(1, &VBO);
+    glGenVertexArrays(1, &state->VAO);
+    glGenBuffers(1, &state->VBO);
 
-    glBindVertexArray(VAO);
-    glBindBuffer(GL_ARRAY_BUFFER, VBO);
+    glBindVertexArray(state->VAO);
+    glBindBuffer(GL_ARRAY_BUFFER, state->VBO);
     glBufferData(GL_ARRAY_BUFFER, sizeof(vertices), vertices, GL_STATIC_DRAW);
 
     // Position attribute
-    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)0);
+    glVertexAttribPointer(0, 2, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)0);
     glEnableVertexAttribArray(0);
 
     // Color attribute
-    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void*)(2 * sizeof(float)));
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 5 * sizeof(float), (void *)(2 * sizeof(float)));
     glEnableVertexAttribArray(1);
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindVertexArray(0);
 
-    bool running = true;
-    SDL_Event event;
+    return SDL_APP_CONTINUE;
+}
 
-    while (running) {
-        while (SDL_PollEvent(&event)) {
-            if (event.type == SDL_EVENT_QUIT) {
-                running = false;
-            }
-        }
-
-        int w, h;
-        SDL_GetWindowSizeInPixels(window, &w, &h);
-        glViewport(0, 0, w, h);
-
-        glClearColor(0.12f, 0.12f, 0.15f, 1.0f);
-        glClear(GL_COLOR_BUFFER_BIT);
-
-        glUseProgram(shaderProgram);
-        glBindVertexArray(VAO);
-        glDrawArrays(GL_TRIANGLES, 0, 3);
-
-        SDL_GL_SwapWindow(window);
+/* Called when an event arrives */
+SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
+{
+    if (event->type == SDL_EVENT_QUIT)
+    {
+        return SDL_APP_SUCCESS; // Signal clean exit
     }
+    return SDL_APP_CONTINUE;
+}
 
-    glDeleteVertexArrays(1, &VAO);
-    glDeleteBuffers(1, &VBO);
-    glDeleteProgram(shaderProgram);
+/* Called every frame */
+SDL_AppResult SDL_AppIterate(void *appstate)
+{
+    auto *state = static_cast<AppState *>(appstate);
 
-    SDL_GL_DestroyContext(glContext);
-    SDL_DestroyWindow(window);
+    int w, h;
+    SDL_GetWindowSizeInPixels(state->window, &w, &h);
+    glViewport(0, 0, w, h);
+
+    glClearColor(0.12f, 0.12f, 0.15f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT);
+
+    glUseProgram(state->shaderProgram);
+    glBindVertexArray(state->VAO);
+    glDrawArrays(GL_TRIANGLES, 0, 3);
+
+    SDL_GL_SwapWindow(state->window);
+
+    return SDL_APP_CONTINUE;
+}
+
+/* Called once on termination to clean up resources */
+void SDL_AppQuit(void *appstate, SDL_AppResult result)
+{
+    (void)result;
+    if (appstate)
+    {
+        auto *state = static_cast<AppState *>(appstate);
+
+        if (state->VAO)
+            glDeleteVertexArrays(1, &state->VAO);
+        if (state->VBO)
+            glDeleteBuffers(1, &state->VBO);
+        if (state->shaderProgram)
+            glDeleteProgram(state->shaderProgram);
+
+        if (state->glContext)
+            SDL_GL_DestroyContext(state->glContext);
+        if (state->window)
+            SDL_DestroyWindow(state->window);
+
+        delete state;
+    }
     SDL_Quit();
-
-    return 0;
 }
